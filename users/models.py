@@ -1,42 +1,30 @@
 import io
 import random
 
-from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from django.core.files.base import ContentFile
 from django.db import models
+from django.urls import reverse
 from PIL import Image, ImageDraw, ImageFont
 
-
-AVATAR_COLORS = [
-    "#4A90D9", "#5BA85A", "#D47A3A", "#8B6BB1",
-    "#C75B5B", "#4AADAD", "#C0934A", "#7B8CBF",
-]
-
-
-class UserManager(BaseUserManager):
-    def create_user(self, email, name, surname, password=None, **extra_fields):
-        if not email:
-            raise ValueError("Email is required")
-        email = self.normalize_email(email)
-        user = self.model(email=email, name=name, surname=surname, **extra_fields)
-        user.set_password(password)
-        user.save(using=self._db)
-        return user
-
-    def create_superuser(self, email, name, surname, password=None, **extra_fields):
-        extra_fields.setdefault("is_staff", True)
-        extra_fields.setdefault("is_superuser", True)
-        return self.create_user(email, name, surname, password, **extra_fields)
+from team_finder.constants import (
+    USER_ABOUT_MAX_LENGTH,
+    USER_NAME_MAX_LENGTH,
+    USER_PHONE_MAX_LENGTH,
+    USER_SURNAME_MAX_LENGTH,
+)
+from users.constants import AVATAR_FONT_PATH, AVATAR_FONT_RATIO, AVATAR_SIZE, AVATAR_TEXT_COLOR, AvatarColor
+from users.managers import UserManager
 
 
 class User(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(unique=True)
-    name = models.CharField(max_length=124)
-    surname = models.CharField(max_length=124)
+    name = models.CharField(max_length=USER_NAME_MAX_LENGTH)
+    surname = models.CharField(max_length=USER_SURNAME_MAX_LENGTH)
     avatar = models.ImageField(upload_to="avatars/", blank=True)
-    phone = models.CharField(max_length=12, blank=True, default="")
+    phone = models.CharField(max_length=USER_PHONE_MAX_LENGTH, blank=True, default="")
     github_url = models.URLField(blank=True, default="")
-    about = models.TextField(max_length=256, blank=True, default="")
+    about = models.TextField(max_length=USER_ABOUT_MAX_LENGTH, blank=True, default="")
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     favorites = models.ManyToManyField(
@@ -57,36 +45,35 @@ class User(AbstractBaseUser, PermissionsMixin):
     def __str__(self):
         return f"{self.name} {self.surname} <{self.email}>"
 
+    def get_absolute_url(self):
+        return reverse("users:detail", kwargs={"pk": self.pk})
+
     def save(self, *args, **kwargs):
-        is_new = self.pk is None
-        if is_new and not self.avatar:
+        if self.pk is None and not self.avatar:
             avatar_image = self._create_avatar_image()
             filename = f"avatar_{self.email.split('@')[0]}.png"
             self.avatar.save(filename, avatar_image, save=False)
         super().save(*args, **kwargs)
 
-    def _create_avatar_image(self):
-        size = 200
-        color = random.choice(AVATAR_COLORS)
+    def _create_avatar_image(self) -> ContentFile:
+        color = random.choice(list(AvatarColor))
         letter = (self.name[0] if self.name else "?").upper()
+        font_size = int(AVATAR_SIZE * AVATAR_FONT_RATIO)
 
-        img = Image.new("RGB", (size, size), color=color)
+        img = Image.new("RGB", (AVATAR_SIZE, AVATAR_SIZE), color=color)
         draw = ImageDraw.Draw(img)
 
         try:
-            font = ImageFont.truetype(
-                "/Users/nekitf/Documents/team-finder-ad/static/fonts/Neue_Haas_Grotesk_Display_Pro_75_Bold.otf",
-                size=100,
-            )
+            font = ImageFont.truetype(str(AVATAR_FONT_PATH), size=font_size)
         except (IOError, OSError):
-            font = ImageFont.load_default(size=100)
+            font = ImageFont.load_default(size=font_size)
 
         bbox = draw.textbbox((0, 0), letter, font=font)
         text_w = bbox[2] - bbox[0]
         text_h = bbox[3] - bbox[1]
-        x = (size - text_w) / 2 - bbox[0]
-        y = (size - text_h) / 2 - bbox[1]
-        draw.text((x, y), letter, fill="white", font=font)
+        x = (AVATAR_SIZE - text_w) / 2 - bbox[0]
+        y = (AVATAR_SIZE - text_h) / 2 - bbox[1]
+        draw.text((x, y), letter, fill=AVATAR_TEXT_COLOR, font=font)
 
         buffer = io.BytesIO()
         img.save(buffer, format="PNG")

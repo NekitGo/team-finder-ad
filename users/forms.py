@@ -4,21 +4,12 @@ from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import PasswordChangeForm
 
+from core.mixins import GithubUrlMixin
+from users.services import normalize_phone
+
 User = get_user_model()
 
 PHONE_FORMATS = re.compile(r'^(\+7|8)\d{10}$')
-GITHUB_DOMAIN = "github.com"
-
-
-def validate_github_url(value):
-    if value and GITHUB_DOMAIN not in value:
-        raise forms.ValidationError("Ссылка должна вести на GitHub.")
-
-
-def normalize_phone(phone):
-    if phone.startswith("8"):
-        return "+7" + phone[1:]
-    return phone
 
 
 class RegisterForm(forms.Form):
@@ -39,7 +30,7 @@ class LoginForm(forms.Form):
     password = forms.CharField(widget=forms.PasswordInput, label="Пароль")
 
 
-class EditProfileForm(forms.ModelForm):
+class EditProfileForm(GithubUrlMixin, forms.ModelForm):
     class Meta:
         model = User
         fields = ["name", "surname", "avatar", "about", "phone", "github_url"]
@@ -79,12 +70,6 @@ class EditProfileForm(forms.ModelForm):
         if qs.exists():
             raise forms.ValidationError("Этот номер телефона уже используется.")
         return normalized
-
-    def clean_github_url(self):
-        url = self.cleaned_data.get("github_url", "").strip()
-        if url:
-            validate_github_url(url)
-        return url
 
 
 class ChangePasswordForm(PasswordChangeForm):

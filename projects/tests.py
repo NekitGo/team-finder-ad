@@ -29,6 +29,10 @@ class ProjectModelTest(TestCase):
         self.assertEqual(project.status, "open")
         self.assertEqual(str(project), "Test Project")
 
+    def test_get_absolute_url(self):
+        project = Project.objects.create(name="URL Project", owner=self.user)
+        self.assertIn(str(project.pk), project.get_absolute_url())
+
 
 class ProjectListViewTest(TestCase):
     def setUp(self):
@@ -61,7 +65,8 @@ class ProjectDetailViewTest(TestCase):
         self.project = Project.objects.create(name="Detail Project", owner=self.user)
 
     def test_project_detail(self):
-        response = self.client.get(reverse("projects:detail", kwargs={"pk": self.project.pk}))
+        url = reverse("projects:detail", kwargs={"project_id": self.project.pk})
+        response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Detail Project")
 
@@ -85,22 +90,26 @@ class ToggleFavoriteTest(TestCase):
         self.client.login(username="fav@example.com", password="pass")
 
     def test_toggle_favorite_add(self):
-        response = self.client.post(
-            reverse("projects:toggle_favorite", kwargs={"pk": self.project.pk}),
-            content_type="application/json",
-            data=json.dumps({}),
-        )
+        url = reverse("projects:toggle_favorite", kwargs={"project_id": self.project.pk})
+        response = self.client.post(url, content_type="application/json", data=json.dumps({}))
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.content)
         self.assertEqual(data["status"], "ok")
         self.assertTrue(data["favorited"])
         self.assertIn(self.project, self.user.favorites.all())
 
+    def test_toggle_favorite_remove(self):
+        self.user.favorites.add(self.project)
+        url = reverse("projects:toggle_favorite", kwargs={"project_id": self.project.pk})
+        response = self.client.post(url, content_type="application/json", data=json.dumps({}))
+        data = json.loads(response.content)
+        self.assertFalse(data["favorited"])
+        self.assertNotIn(self.project, self.user.favorites.all())
+
     def test_toggle_favorite_requires_login(self):
         self.client.logout()
-        response = self.client.post(
-            reverse("projects:toggle_favorite", kwargs={"pk": self.project.pk}),
-        )
+        url = reverse("projects:toggle_favorite", kwargs={"project_id": self.project.pk})
+        response = self.client.post(url)
         self.assertEqual(response.status_code, 302)
 
 
@@ -149,11 +158,8 @@ class CompleteProjectTest(TestCase):
         self.client.login(username="complete@example.com", password="pass")
 
     def test_complete_project(self):
-        response = self.client.post(
-            reverse("projects:complete", kwargs={"pk": self.project.pk}),
-            content_type="application/json",
-            data=json.dumps({}),
-        )
+        url = reverse("projects:complete", kwargs={"project_id": self.project.pk})
+        response = self.client.post(url, content_type="application/json", data=json.dumps({}))
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.content)
         self.assertEqual(data["status"], "ok")
